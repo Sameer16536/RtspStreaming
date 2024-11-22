@@ -8,7 +8,8 @@ import gc
 
 logger = logging.getLogger(__name__)
 
-# Reduce number of simultaneous streams if needed
+# List of RTSP stream URLs that will be available for WebRTC streaming
+# Currently configured to handle 8 simultaneous streams from localhost
 RTSP_STREAMS = [
     'rtsp://localhost:8554/live.sdp',
     'rtsp://localhost:8554/live.sdp',
@@ -30,7 +31,18 @@ RTSP_STREAMS = [
 ]
 
 class WebRTCConsumer(AsyncWebsocketConsumer):
+
+    # WebSocket consumer that handles WebRTC connections for multiple video streams.
+    # Converts RTSP streams to WebRTC and manages peer connections.
+
+    
     async def connect(self):
+        """
+        Initialize connection and send available stream count to client.
+        - pcs: Dictionary to store RTCPeerConnection objects
+        - players: Dictionary to store MediaPlayer objects
+        - active_streams: Set to track currently streaming connections
+        """
         self.pcs = {}
         self.players = {}
         self.active_streams = set()  # Track active streams
@@ -41,6 +53,16 @@ class WebRTCConsumer(AsyncWebsocketConsumer):
         }))
 
     async def receive(self, text_data):
+        # Handle incoming WebSocket messages for WebRTC signaling:
+        # 1. 'offer': Sets up new WebRTC connection with optimized media settings
+        # 2. 'ice': Handles ICE candidates for peer connection
+        
+        # For each stream:
+        # - Creates peer connection with STUN server
+        # - Initializes MediaPlayer with optimized settings for low-latency
+        # - Sets up video track and handles SDP negotiation
+        # - Monitors connection state changes
+
         try:
             message = json.loads(text_data)
             stream_id = message.get('streamId')
@@ -120,7 +142,10 @@ class WebRTCConsumer(AsyncWebsocketConsumer):
             await self.cleanup_stream(stream_id)
 
     def add_bandwidth_constraints(self, sdp):
-        """Add bandwidth constraints to SDP"""
+
+        # Modify SDP to add bandwidth constraints for video streams.
+        # Sets maximum bandwidth to 800 kbps to optimize performance and resource usage.
+
         lines = sdp.split('\n')
         modified_lines = []
         for line in lines:
@@ -131,7 +156,13 @@ class WebRTCConsumer(AsyncWebsocketConsumer):
         return '\n'.join(modified_lines)
 
     async def cleanup_stream(self, stream_id):
-        """Clean up resources for a specific stream"""
+        
+        # Clean up resources for a specific stream:
+        # - Close and remove peer connection
+        # - Stop and remove media player
+        # - Remove from active streams tracking
+        # - Force garbage collection to prevent memory leaks
+
         try:
             if stream_id in self.pcs:
                 await self.pcs[stream_id].close()
@@ -151,7 +182,10 @@ class WebRTCConsumer(AsyncWebsocketConsumer):
             logger.error(f"Error cleaning up stream {stream_id}: {e}")
 
     async def disconnect(self, close_code):
-        """Clean up all resources on disconnect"""
+        """
+        Clean up all resources when WebSocket connection is closed.
+        Ensures all streams are properly stopped and resources are released.
+        """
         try:
             for stream_id in list(self.pcs.keys()):
                 await self.cleanup_stream(stream_id)

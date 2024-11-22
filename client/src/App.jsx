@@ -1,19 +1,23 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import './App.css';
 
+// Maximum and minimum number of video streams that can be displayed
 const MAX_VIDEOS = 16;
 const MIN_VIDEOS = 1;
 
 const App = () => {
+  // Refs to store video elements and WebRTC peer connections
   const videoRefs = useRef([]);
   const pcRefs = useRef({});
   const wsRef = useRef(null);
+
+  // State management for connection status, streams, and UI updates
   const [isConnected, setIsConnected] = useState(false);
   const [streams, setStreams] = useState([]);
   const [connectionStates, setConnectionStates] = useState({});
   const [currentTime, setCurrentTime] = useState(new Date());
 
-  // Update timestamp every second
+  // Update timestamp every second for display purposes
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
@@ -21,7 +25,9 @@ const App = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // Create a new WebRTC peer connection for a specific stream
   const createPeerConnection = useCallback((streamId) => {
+    // Initialize RTCPeerConnection with STUN server and connection options
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
       iceCandidatePoolSize: 10,
@@ -29,6 +35,7 @@ const App = () => {
       rtcpMuxPolicy: 'require'
     });
 
+    // Handle ICE candidate events for connection establishment
     pc.onicecandidate = (event) => {
       if (event.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({
@@ -43,12 +50,14 @@ const App = () => {
       }
     };
 
+    // Handle incoming video tracks
     pc.ontrack = (event) => {
       if (videoRefs.current[streamId]) {
         videoRefs.current[streamId].srcObject = event.streams[0];
       }
     };
 
+    // Update UI based on connection state changes
     pc.onconnectionstatechange = () => {
       setConnectionStates(prev => ({
         ...prev,
@@ -59,13 +68,16 @@ const App = () => {
     return pc;
   }, []);
 
+  // Initialize WebRTC connection for a specific stream
   const startWebRTC = useCallback(async (streamId) => {
     try {
       const pc = createPeerConnection(streamId);
       pcRefs.current[streamId] = pc;
 
+      // Set up video receiver
       pc.addTransceiver('video', { direction: 'recvonly' });
 
+      // Create and send offer to server
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
@@ -81,6 +93,7 @@ const App = () => {
     }
   }, [createPeerConnection]);
 
+  // Set up WebSocket connection and handle messages
   useEffect(() => {
     const connectWebSocket = () => {
       const ws = new WebSocket('ws://localhost:8000/ws/stream/');
@@ -135,6 +148,7 @@ const App = () => {
     connectWebSocket();
   }, [startWebRTC]);
 
+  // Render video grid with connection status indicators
   return (
     <div className="video-grid" data-streams={streams.length}>
       {streams.map((_, index) => (
